@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+# by endoaki@jp.ibm.com 2017-05-18
+# added timezone and more formats by endo@isskk.co.jp 2025-11-27
+#
+import sys
+import datetime
+import re
+
+# Supported timestamp formats
+FORMATS = [
+    "%Y-%m-%d %H:%M:%S",                # 2017-10-30 16:50:46
+    "%a %b %d %Y %H:%M:%S",             # Fri Apr 07 2017 16:50:46
+    "%a %b %d %H:%M:%S %Z %Y",          # Thu Nov 27 16:08:37 JST 2025
+    "%d/%b/%Y:%H:%M:%S %z",             # 01/Oct/2025:00:00:14 +0900
+    "%Y-%m-%dT%H:%M:%S%z",              # 2025-11-12T11:11:11+0900
+    "%Y-%m-%dT%H:%M:%S.%f%z",           # 2025-11-12T11:11:11.123+0900
+    "%Y-%m-%dT%H:%M:%SZ",               # 2025-11-12T11:11:11Z
+    "%Y-%m-%dT%H:%M:%S.%fZ",            # 2025-11-12T11:11:11.123Z
+]
+
+# ----- Parse CLI options -----
+tz_offset = datetime.timezone.utc   # default: UTC
+
+args = sys.argv[1:]
+while args:
+    if args[0] == "-z":
+        if len(args) < 2:
+            print("Error: -z requires an offset like +0900", file=sys.stderr)
+            sys.exit(1)
+        offset_str = args[1]
+
+        # Validate +HHMM or -HHMM
+        if not re.match(r"^[+-]\d{4}$", offset_str):
+            print("Error: timezone offset must be like +0900 or -0500", file=sys.stderr)
+            sys.exit(1)
+
+        sign = 1 if offset_str[0] == "+" else -1
+        hours = int(offset_str[1:3])
+        minutes = int(offset_str[3:5])
+        tz_offset = datetime.timezone(
+            sign * datetime.timedelta(hours=hours, minutes=minutes)
+        )
+
+        args = args[2:]
+    else:
+        print(f"Unknown option: {args[0]}", file=sys.stderr)
+        sys.exit(1)
+
+# ----- Read input line -----
+line = sys.stdin.read().strip()
+# Normalize ISO8601 timezone "+09:00" → "+0900"
+line = re.sub(r'([+-]\d{2}):?(\d{2})$', r'\1\2', line)
+
+if not line:
+    print("Error: no input", file=sys.stderr)
+    sys.exit(1)
+
+
+# ----- Parse timestamp -----
+def parse_timestamp(s):
+    for fmt in FORMATS:
+        try:
+            dt = datetime.datetime.strptime(s, fmt)
+
+            # If no timezone specified → apply CLI timezone (default UTC)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=tz_offset)
+
+            return dt.timestamp()
+        except ValueError:
+            continue
+    return None
+
+
+epoch = parse_timestamp(line)
+if epoch is None:
+    print(f"Error: cannot parse '{line}'", file=sys.stderr)
+    sys.exit(1)
+
+# Print int if clean
+print(int(epoch) if epoch.is_integer() else epoch)
